@@ -12,7 +12,7 @@ import {
   handleSubmitTxRequest,
   handleAuthRequest,
   handleGetBalanceRequest,
-  handleGetCurrentHeightRequest
+  handleGetCurrentHeightRequest,
 } from "./ergoApiHandlers";
 import { AddressState } from "@/types/internal";
 import { Browser } from "@/utils/browserApi";
@@ -94,6 +94,8 @@ Browser.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           await handleAuthRequest(message, port, session);
           break;
         case "signTxInputs":
+        case "commitment":
+        case "multi":
         case "signTx":
           await handleSignTxRequest(message, port, session);
           break;
@@ -126,7 +128,7 @@ function sendRequestsToUI(port: chrome.runtime.Port) {
           function: request.message.function,
           params: [value.origin, value.favicon]
         } as RpcMessage);
-      } else if (request.message.function === "signTx") {
+      } else if (request.message.function === "signTx" || request.message.function === "commitment") {
         port.postMessage({
           type: "rpc/nautilus-request",
           sessionId: key,
@@ -138,7 +140,7 @@ function sendRequestsToUI(port: chrome.runtime.Port) {
             request.message.params ? request.message.params[0] : undefined
           ]
         } as RpcMessage);
-      } else if (request.message.function === "signTxInputs") {
+      } else if (request.message.function === "signTxInputs" || request.message.function === "multi") {
         port.postMessage({
           type: "rpc/nautilus-request",
           sessionId: key,

@@ -11,6 +11,8 @@
     <tx-sign-view
       :transaction="rawTx"
       :inputs-to-sign="inputsToSign"
+      :public-hint-bag="publicHintBag"
+      :operation="operation"
       @fail="onFail"
       @refused="onRefused"
       @success="onSuccess"
@@ -28,6 +30,7 @@ import DappPlate from "@/components/DappPlate.vue";
 import { ACTIONS } from "@/constants/store";
 import { connectedDAppsDbService } from "@/api/database/connectedDAppsDbService";
 import TxSignView from "@/components/TxSignView.vue";
+import { TransactionHintsBag } from "ergo-lib-wasm-browser";
 
 export default defineComponent({
   name: "SignTxConfirmView",
@@ -38,7 +41,7 @@ export default defineComponent({
   async created() {
     const message = find(
       rpcHandler.messages,
-      (m) => m.function === "signTx" || m.function === "signTxInputs"
+      (m) => m.function === "signTx" || m.function === "signTxInputs" || m.function === 'commitment' || m.function === 'multi'
     );
     if (!message || !message.params) {
       return;
@@ -52,8 +55,14 @@ export default defineComponent({
     if (message.function === "signTxInputs") {
       this.operation = "signTxInputs";
       this.inputsToSign = message.params[3];
-    } else {
+    } else if(message.function === "signTx") {
       this.operation = "signTx";
+    } else if(message.function === "commitment"){
+      this.operation = "commitment";
+    } else if(message.function === "multi"){
+      const hints = TransactionHintsBag.from_json(message.params[3]);
+      this.operation = "multi";
+      this.publicHintBag = Object.freeze(hints);
     }
 
     const connection = await connectedDAppsDbService.getByOrigin(this.origin);
@@ -68,13 +77,14 @@ export default defineComponent({
   data() {
     return {
       rawTx: Object.freeze({} as UnsignedTx),
-      operation: "signTx" as "signTx" | "signTxInputs",
+      operation: "signTx" as "signTx" | "signTxInputs" | "commitment" | "multi",
       currentWalletId: 0,
       requestId: 0,
       sessionId: 0,
       origin: "",
       favicon: "",
-      inputsToSign: [] as number[]
+      inputsToSign: [] as number[],
+      publicHintBag: Object.freeze({} as TransactionHintsBag)
     };
   },
   watch: {

@@ -131,7 +131,7 @@ import {
   SignTxCommand,
   StateAddress,
   StateAssetInfo,
-  WalletType
+  WalletType, SignMultiTxCommand
 } from "@/types/internal";
 import { ACTIONS } from "@/constants/store";
 import { useVuelidate } from "@vuelidate/core";
@@ -147,6 +147,7 @@ import { AddressType } from "@fleet-sdk/core";
 import TxSignSummary from "@/components/TxSignSummary.vue";
 import { DeviceError, RETURN_CODE } from "ledger-ergo-js";
 import { isDefined } from "@fleet-sdk/common";
+import { ReducedTransaction, TransactionHintsBag } from "ergo-lib-wasm-browser";
 
 export default defineComponent({
   name: "TxSignView",
@@ -160,6 +161,8 @@ export default defineComponent({
   props: {
     transaction: { type: Object as PropType<Readonly<UnsignedTx>>, required: false },
     inputsToSign: { type: Array<number>, required: false },
+    publicHintBag: { type: TransactionHintsBag, required: false },
+    operation: {type: String, required: true },
     isModal: { type: Boolean, default: false },
     setExternalState: {
       type: Function as PropType<(state: ProverStateType, message?: string) => void>,
@@ -264,19 +267,51 @@ export default defineComponent({
       this.setState(ProverStateType.busy, { statusText: "Signing transaction..." });
 
       try {
-        const signedTx = await this.$store.dispatch(ACTIONS.SIGN_TX, {
-          tx: this.transaction,
-          inputsToSign: this.inputsToSign,
-          walletId: this.currentWalletId,
-          password: this.password,
-          callback: this.patchState
-        } as SignTxCommand);
 
-        if (this.mode === "embedded" || this.isMnemonicSigning) {
-          this.setState(ProverStateType.success);
+        if(this.operation === "commitment"){
+          const signedTx = await this.$store.dispatch(ACTIONS.COMMITMENT, {
+            tx: this.transaction,
+            inputsToSign: this.inputsToSign,
+            walletId: this.currentWalletId,
+            password: this.password,
+            callback: this.patchState
+          } as SignTxCommand);
+
+          if (this.mode === "embedded" || this.isMnemonicSigning) {
+            this.setState(ProverStateType.success);
+          }
+
+          this.succeed(signedTx, this.setState);
+        } else if (this.operation === "multi"){
+          const signedTx = await this.$store.dispatch(ACTIONS.MULTI, {
+            tx: this.transaction,
+            inputsToSign: this.inputsToSign,
+            publicHintBag: this.publicHintBag,
+            walletId: this.currentWalletId,
+            password: this.password,
+            callback: this.patchState
+          } as SignMultiTxCommand);
+
+          if (this.mode === "embedded" || this.isMnemonicSigning) {
+            this.setState(ProverStateType.success);
+          }
+
+          this.succeed(signedTx, this.setState);
+        } else {
+          const signedTx = await this.$store.dispatch(ACTIONS.SIGN_TX, {
+            tx: this.transaction,
+            inputsToSign: this.inputsToSign,
+            walletId: this.currentWalletId,
+            password: this.password,
+            callback: this.patchState
+          } as SignTxCommand);
+
+          if (this.mode === "embedded" || this.isMnemonicSigning) {
+            this.setState(ProverStateType.success);
+          }
+
+          this.succeed(signedTx, this.setState);
         }
-
-        this.succeed(signedTx, this.setState);
       } catch (e) {
         const errorMessage = typeof e === "string" ? e : (e as Error).message;
         // eslint-disable-next-line no-console
