@@ -1,6 +1,7 @@
 import BigNumber from "bignumber.js";
 import { ErgoBox, UnsignedTx } from "./connector";
 import { LedgerDeviceModelId } from "@/constants/ledger";
+import { TransactionHintsBag } from "ergo-lib-wasm-browser";
 
 export enum AddressState {
   Used,
@@ -97,6 +98,15 @@ export type FeeSettings = {
 export type SignTxCommand = {
   tx: UnsignedTx;
   inputsToSign?: number[];
+  walletId: number;
+  password: string;
+  callback?: (newState: Partial<SigningState>) => void;
+};
+
+export type SignMultiTxCommand = {
+  tx: UnsignedTx;
+  inputsToSign?: number[];
+  publicHintBag: TransactionHintsBag,
   walletId: number;
   password: string;
   callback?: (newState: Partial<SigningState>) => void;

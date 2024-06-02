@@ -67,6 +67,8 @@ class RpcHandler {
           });
           break;
         case "signTxInputs":
+        case "commitment":
+        case "multi":
         case "signTx":
           router.replace({
             name: "connector-sign-tx",

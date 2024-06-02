@@ -32,7 +32,7 @@ import {
   AssetType,
   AssetSubtype,
   SignEip28MessageCommand,
-  Eip28SignedMessage
+  Eip28SignedMessage, SignMultiTxCommand
 } from "@/types/internal";
 import { bip32Pool } from "@/utils/objectPool";
 import { StateAddress, StateAsset, StateWallet } from "@/types/internal";
@@ -65,6 +65,7 @@ import { Prover } from "./api/ergo/transaction/prover";
 import { getDefaultServerUrl, graphQLService } from "./api/explorer/graphQlService";
 import { AssetPriceRate, ergoDexService } from "./api/ergoDexService";
 import { DEFAULT_EXPLORER_URL } from "./constants/explorer";
+import JSONBig from "json-bigint";
 
 function dbAddressMapper(a: IDbAddress) {
   return {
@@ -797,6 +798,114 @@ export default createStore({
           .changeIndex(find(ownAddresses, (a) => a.script === changeAddress)?.index ?? 0)
           .setCallback(command.callback)
           .sign(command.tx, blockHeaders);
+
+        return graphQLService.mapTransaction(signedTx);
+      }
+    },
+    async [ACTIONS.COMMITMENT]({ state }, command: SignTxCommand) {
+      const inputAddresses = extractP2PKAddressesFromInputs(command.tx.inputs);
+      const ownAddresses = await addressesDbService.getByWalletId(command.walletId);
+      const addresses = ownAddresses
+        .filter((a) => inputAddresses.includes(a.script))
+        .map((a) => dbAddressMapper(a));
+
+      if (isEmpty(addresses)) {
+        const changeIndex = state.currentWallet.settings.defaultChangeIndex;
+        addresses.push(
+          dbAddressMapper(
+            find(ownAddresses, (a) => a.index === changeIndex) ??
+            find(ownAddresses, (a) => a.index === 0) ??
+            ownAddresses[0]
+          )
+        );
+      }
+
+      if (command.callback) {
+        command.callback({ statusText: "Loading context data..." });
+      }
+
+      const isLedger = state.currentWallet.type === WalletType.Ledger;
+      const deriver = isLedger
+        ? bip32Pool.get(state.currentWallet.publicKey)
+        : await Bip32.fromMnemonic(
+          await walletsDbService.getMnemonic(command.walletId, command.password)
+        );
+
+      const changeAddress = getChangeAddress(
+        command.tx.outputs,
+        ownAddresses.map((a) => a.script)
+      );
+
+      const blockHeaders = isLedger ? [] : await graphQLService.getBlockHeaders({ take: 10 });
+
+      if (command.inputsToSign && command.inputsToSign.length > 0) {
+        return await new Prover(deriver)
+          .from(addresses)
+          .useLedger(isLedger)
+          .changeIndex(find(ownAddresses, (a) => a.script === changeAddress)?.index ?? 0)
+          .setCallback(command.callback)
+          .signInputs(command.tx, blockHeaders, command.inputsToSign);
+      } else {
+        const signedTx = await new Prover(deriver)
+          .from(addresses)
+          .useLedger(isLedger)
+          .changeIndex(find(ownAddresses, (a) => a.script === changeAddress)?.index ?? 0)
+          .setCallback(command.callback)
+          .sign(command.tx, blockHeaders, true) as unknown as string;
+
+        return JSONBig.parse(signedTx);
+      }
+    },
+    async [ACTIONS.MULTI]({ state }, command: SignMultiTxCommand) {
+      const inputAddresses = extractP2PKAddressesFromInputs(command.tx.inputs);
+      const ownAddresses = await addressesDbService.getByWalletId(command.walletId);
+      const addresses = ownAddresses
+        .filter((a) => inputAddresses.includes(a.script))
+        .map((a) => dbAddressMapper(a));
+
+      if (isEmpty(addresses)) {
+        const changeIndex = state.currentWallet.settings.defaultChangeIndex;
+        addresses.push(
+          dbAddressMapper(
+            find(ownAddresses, (a) => a.index === changeIndex) ??
+            find(ownAddresses, (a) => a.index === 0) ??
+            ownAddresses[0]
+          )
+        );
+      }
+
+      if (command.callback) {
+        command.callback({ statusText: "Loading context data..." });
+      }
+
+      const isLedger = state.currentWallet.type === WalletType.Ledger;
+      const deriver = isLedger
+        ? bip32Pool.get(state.currentWallet.publicKey)
+        : await Bip32.fromMnemonic(
+          await walletsDbService.getMnemonic(command.walletId, command.password)
+        );
+
+      const changeAddress = getChangeAddress(
+        command.tx.outputs,
+        ownAddresses.map((a) => a.script)
+      );
+
+      const blockHeaders = isLedger ? [] : await graphQLService.getBlockHeaders({ take: 10 });
+
+      if (command.inputsToSign && command.inputsToSign.length > 0) {
+        return await new Prover(deriver)
+          .from(addresses)
+          .useLedger(isLedger)
+          .changeIndex(find(ownAddresses, (a) => a.script === changeAddress)?.index ?? 0)
+          .setCallback(command.callback)
+          .signInputs(command.tx, blockHeaders, command.inputsToSign);
+      } else {
+        const signedTx = await new Prover(deriver)
+          .from(addresses)
+          .useLedger(isLedger)
+          .changeIndex(find(ownAddresses, (a) => a.script === changeAddress)?.index ?? 0)
+          .setCallback(command.callback)
+          .sign(command.tx, blockHeaders, false, true, command.publicHintBag);
 
         return graphQLService.mapTransaction(signedTx);
       }

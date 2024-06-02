@@ -176,9 +176,17 @@ class NautilusErgoApi {
   get_change_address() {
     return this._rpcCall("getChangeAddress");
   }
-
+  
   sign_tx(tx) {
     return this._rpcCall("signTx", [tx]);
+  }
+
+  generate_commitments_for_tx(tx) {
+    return this._rpcCall("commitment", [tx]);
+  }
+  
+  sign_tx_multi(tx, publicHintBag) {
+    return this._rpcCall("multi", [tx, publicHintBag]);
   }
 
   sign_tx_inputs(tx, indexes) {

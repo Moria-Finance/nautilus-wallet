@@ -7,7 +7,7 @@ import {
   Tokens,
   UnsignedTransaction,
   Wallet,
-  ErgoBox as WasmErgoBox
+  ErgoBox as WasmErgoBox, ReducedTransaction, TransactionHintsBag
 } from "ergo-lib-wasm-browser";
 import JSONBig from "json-bigint";
 import {
@@ -77,14 +77,28 @@ export class Prover {
     return wallet.sign_message_using_p2pk(address, Buffer.from(message, "utf-8"));
   }
 
-  public async sign(unsignedTx: UnsignedTx, headers: Header[]): Promise<ErgoTx> {
+  public async sign(unsignedTx: UnsignedTx, headers: Header[], isCommitment: boolean = false, isMulti: boolean = false, publicHintBag?: TransactionHintsBag): Promise<ErgoTx> {
     const sigmaRust = wasmModule.SigmaRust;
     const unspentBoxes = sigmaRust.ErgoBoxes.from_boxes_json(unsignedTx.inputs);
     const dataInputBoxes = sigmaRust.ErgoBoxes.from_boxes_json(unsignedTx.dataInputs);
     const tx = sigmaRust.UnsignedTransaction.from_json(JSONBig.stringify(unsignedTx));
-    const signed = await this._sign(tx, unspentBoxes, dataInputBoxes, headers);
 
-    return JSONBig.parse(signed.to_json());
+
+    if(isCommitment && !isMulti){
+      const signed = await this.signCommitment(tx, unspentBoxes, dataInputBoxes, headers);
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      //@ts-ignore
+      return JSONBig.stringify(signed.to_json());
+    } else if(!isCommitment && isMulti && publicHintBag){
+      const signed = await this.signMulti(tx, unspentBoxes, dataInputBoxes, publicHintBag, headers);
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      //@ts-ignore
+      return JSON.parse(signed.to_json());
+    } else {
+      const signed = await this._sign(tx, unspentBoxes, dataInputBoxes, headers);
+
+      return JSONBig.parse(signed.to_json());
+    }
   }
 
   public async signInputs(
@@ -99,6 +113,67 @@ export class Prover {
     const tx = sigmaRust.UnsignedTransaction.from_json(JSONBig.stringify(unsignedTx));
     const signed = this._signInputs(tx, unspentBoxes, dataInputBoxes, headers, inputsToSign);
 
+    return signed;
+  }
+
+  private async signCommitment(
+    unsigned: UnsignedTransaction,
+    unspentBoxes: ErgoBoxes,
+    dataInputBoxes: ErgoBoxes,
+    headers: Header[]
+  ) {
+    const sigmaRust = wasmModule.SigmaRust;
+
+    const wallet = this.buildWallet(this._from, this._deriver);
+    const blockHeaders = sigmaRust.BlockHeaders.from_json(
+      headers.map((x) => {
+        return {
+          ...x,
+          id: x.headerId,
+          timestamp: toBigNumber(x.timestamp).toNumber(),
+          nBits: toBigNumber(x.nBits).toNumber(),
+          votes: Buffer.from(x.votes).toString("hex")
+        };
+      })
+    );
+
+    const preHeader = sigmaRust.PreHeader.from_block_header(blockHeaders.get(0));
+    const signContext = new sigmaRust.ErgoStateContext(preHeader, blockHeaders);
+
+    const reducedTx = ReducedTransaction.from_unsigned_tx(unsigned, unspentBoxes, dataInputBoxes, signContext)
+
+    const signed = wallet.generate_commitments_for_reduced_transaction(reducedTx);
+    return signed;
+  }
+
+  private async signMulti(
+    unsigned: UnsignedTransaction,
+    unspentBoxes: ErgoBoxes,
+    dataInputBoxes: ErgoBoxes,
+    publicHintBags: TransactionHintsBag,
+    headers: Header[]
+  ) {
+    const sigmaRust = wasmModule.SigmaRust;
+
+    const wallet = this.buildWallet(this._from, this._deriver);
+    const blockHeaders = sigmaRust.BlockHeaders.from_json(
+      headers.map((x) => {
+        return {
+          ...x,
+          id: x.headerId,
+          timestamp: toBigNumber(x.timestamp).toNumber(),
+          nBits: toBigNumber(x.nBits).toNumber(),
+          votes: Buffer.from(x.votes).toString("hex")
+        };
+      })
+    );
+
+    const preHeader = sigmaRust.PreHeader.from_block_header(blockHeaders.get(0));
+    const signContext = new sigmaRust.ErgoStateContext(preHeader, blockHeaders);
+
+    const reducedTx = ReducedTransaction.from_unsigned_tx(unsigned, unspentBoxes, dataInputBoxes, signContext)
+
+    const signed = wallet.sign_reduced_transaction_multi(reducedTx, publicHintBags);
     return signed;
   }
 
